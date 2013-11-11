@@ -1,0 +1,7 @@
+@relation untitled
+@attribute att1 {True, False}
+@attribute att2 {True, False}
+@attribute att3 {True, False}
+@data
+True,False,False
+False,True,True

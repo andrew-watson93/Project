@@ -1,0 +1,224 @@
+import nltk
+from nltk.corpus import brown
+from nltk.corpus import stopwords
+from nltk.probability import FreqDist
+from nltk.probability import LidstoneProbDist
+from nltk import NgramModel
+from nltk import pos_tag
+from nltk.tokenize import WhitespaceTokenizer
+from nltk.tokenize import word_tokenize
+import lexical
+import test
+import vp
+import arff
+
+third_person =  ['anybody','anyone','anything','everybody','everyone','everything','he','her','hers','herself','him','himself','his','I','it','its','itself','neither','nobody','nothing','she','somebody','someone','something','their','theirs','theirself','theirselves','them','themself','themselves','they','this',"what's-his-face","what's-his-name",'you-know-what','you-know-who']
+
+indef = ['a,','an']
+
+past = ['VBD', 'VBN']
+
+present = ['VBG','VBP','VBZ']
+
+sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
+slogans = 'slogans_distribution.txt'
+
+
+def calc_prob_lex(quote,model):
+	size = model._n
+	
+	if size == 1:
+		prob = 1.0
+		for word in quote:
+			prob*= model.prob(word,[],True)
+		return prob
+	
+	elif size == 2:
+		bigrams = nltk.bigrams(quote)
+		prob = 1.0
+		for (w1,w2) in bigrams:
+			prob*= model.prob(w2,[w1],True)
+		return prob
+			
+	else:
+		trigrams = nltk.trigrams(quote)
+		prob = 1.0
+		for (w1,w2,w3) in trigrams:
+			prob*= model.prob(w3,[w1,w2],True)
+		return prob
+		
+def calc_prob_syn(quote,model):
+	size = model._n
+	
+	if size == 1:
+		prob = 1.0
+		for word in quote:
+			prob*= model.prob(word,[],True)
+		return prob
+	
+	elif size == 2:
+		prob = 1.0
+		bigrams = nltk.bigrams(['<S>'] + quote)
+		for (w1,w2) in bigrams:
+			prob*= model.prob(w2,[w1],True)
+		return prob
+		
+	else:
+		if len(quote) == 1:
+			return mem_model.prob(quote[0],['<S>'], True)
+		
+		else:
+			trigrams = nltk.trigrams(['<S>'] + quote)
+			prob = 1.0
+			for (w1,w2,w3) in trigrams:
+				prob*= model.prob(w3,[w1,w2],True)
+			return prob
+			
+		
+def add_sentence_boundary(tags):
+	new_tags = []
+	for t in tags:
+		new_tags.append(t)
+		if t == '.':
+			new_tags.append('<S>')
+	return new_tags
+			
+
+def generality(tagged_quote):
+	words = [w for (w,t) in tagged_quote]
+	tags = [t for (w,t) in tagged_quote]
+	
+	t_p_score = sum(words.count(w) for w in third_person)
+	indef_score = sum(words.count(w) for w in indef)
+	past_tense_score = sum(tags.count(tag) for tag in past)
+	present_tense_score = sum(tags.count(tag) for tag in present)
+	
+	return [t_p_score, indef_score, past_tense_score, present_tense_score]
+
+stops = stopwords.words('english')
+words = [w.lower() for w in brown.words(categories='news')]
+fd = FreqDist(words)
+top = [w for (w,c) in fd.items() if c>10 and test.contains_letters(w) and not w in stops]
+
+
+q_aq = lexical.quotes
+init_q_aq_tags = [(pos_tag(q), pos_tag(aq)) for (q,aq) in q_aq]
+
+q_aq_tags = []
+
+for (q,aq) in init_q_aq_tags:
+	init_q_tags = [tag for (w,tag) in q]
+	init_aq_tags = [tag for (w,tag) in aq]
+	q_tags = add_sentence_boundary(init_q_tags)
+	aq_tags = add_sentence_boundary(init_aq_tags)
+	q_aq_tags.append((q_tags,aq_tags))
+	
+
+bag_of_words = [([q.count(word) for word in top] + ['mem'],[aq.count(word) for word in top] + ['nonmem']) for(q,aq) in q_aq]
+flattened_bag_of_words = [bag for tup in bag_of_words for bag in tup]
+
+att_names = top + ['class_id']
+
+arff.dump('bag_of_words,arff', flattened_bag_of_words, relation = 'new relation', names = att_names)
+
+#brown_words = [w.lower() for w in brown.words(categories='news')]
+#tagged_brown = pos_tag(brown_words)
+
+#unigram_lex = NgramModel(1,brown_words, lambda f,b:LidstoneProbDist(f,0.2))
+#bigram_lex = NgramModel(2,brown_words, lambda f,b:LidstoneProbDist(f,0.2))
+#trigram_lex = NgramModel(3,brown_words, lambda f,b:LidstoneProbDist(f,0.2))
+
+#init_brown_tags = pos_tag(brown_words)
+#init_brown_tags = [tag for (w,tag) in init_brown_tags]
+
+#brown_tags = add_sentence_boundary(init_brown_tags)
+#		
+#unigram_syn = NgramModel(1,brown_tags, lambda f,b:LidstoneProbDist(f,0.2))
+#bigram_syn = NgramModel(2,brown_tags, lambda f,b:LidstoneProbDist(f,0.2))
+#trigram_syn = NgramModel(3,brown_tags, lambda f,b:LidstoneProbDist(f,0.2))
+
+#distinct_1_gram_lex_probs = [(calc_prob_lex(q, unigram_lex), calc_prob_lex(aq,unigram_lex)) for (q,aq) in q_aq]
+#distinct_1_gram_lex_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in distinct_1_gram_lex_probs]
+
+#distinct_2_gram_lex_probs = [(calc_prob_lex(q, bigram_lex), calc_prob_lex(aq,bigram_lex)) for (q,aq) in q_aq]
+#distinct_2_gram_lex_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in distinct_2_gram_lex_probs]
+
+#distinct_3_gram_lex_probs = [(calc_prob_lex(q, trigram_lex), calc_prob_lex(aq,trigram_lex)) for (q,aq) in q_aq]
+#distinct_3_gram_lex_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in distinct_3_gram_lex_probs]
+
+#distinct_1_gram_syn_probs = [(calc_prob_syn(q, unigram_syn), calc_prob_syn(aq,unigram_syn)) for (q,aq) in q_aq_tags]
+#distinct_1_gram_syn_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in distinct_1_gram_syn_probs]
+
+#distinct_2_gram_syn_probs = [(calc_prob_syn(q, bigram_syn), calc_prob_syn(aq,bigram_syn)) for (q,aq) in q_aq_tags]
+#distinct_2_gram_syn_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in distinct_2_gram_syn_probs]
+
+#distinct_3_gram_syn_probs = [(calc_prob_syn(q, trigram_syn), calc_prob_syn(aq,trigram_syn)) for (q,aq) in q_aq_tags]
+#distinct_3_gram_syn_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in distinct_3_gram_syn_probs]
+
+#distinct_feature_vecs = zip(distinct_1_gram_lex_features, distinct_2_gram_lex_features, distinct_3_gram_lex_features,distinct_1_gram_syn_features, distinct_2_gram_syn_features, distinct_3_gram_syn_features)
+
+#distinct_feature_vecs = [[feat for l in vec for feat in l] for vec in distinct_feature_vecs]
+
+#arff.dump('distinct.arff', distinct_feature_vecs, relation='quotepairs', names = ['unigram_lex_quote_prob', 'unigram_lex_antiquote_prob', 'unigram_lex_diff', 'unigram_lex_quote1_more_likely', 'bigram_lex_quote_prob', 'bigram_lex_antiquote_prob', 'bigram_lex_diff', 'bigram_lex_quote1_more_likely', 'trigram_lex_quote_prob', 'trigram_lex_antiquote_prob', 'trigram_lex_diff', 'trigram_lex_quote1_more_likely', 'unigram_syn_quote_prob', 'unigram_syn_antiquote_prob', 'unigram_syn_diff', 'unigram_syn_quote1_more_likely', 'bigram_syn_quote_prob', 'bigram_syn_antiquote_prob', 'bigram_syn_diff', 'bigram_syn_quote1_more_likely', 'trigram_syn_quote_prob', 'trigram_syn_antiquote_prob', 'trigram_syn_diff', 'trigram_syn_quote1_more_likely'])
+
+#generality_scores_q_aqs = [ (generality(q), generality(aq)) for (q,aq) in init_q_aq_tags]
+#generality_feature_vecs = [[tp_q < tp_aq, indef_q > indef_aq, past_q < past_aq, present_q > present_aq] for ([tp_q, indef_q, past_q, present_q],[tp_aq, indef_aq, past_aq, present_aq]) in generality_scores_q_aqs]
+
+#arff.dump('generality.arff', generality_feature_vecs, relation= 'quotepairs', names = ['less_third_person', 'more_indefinite_article', 'less_past_tense', 'more_present_tense'])
+
+#slogan_lines = list(line.strip() for line in open(slogans))
+
+#sent_tokenized_slogans = [sent_detector.tokenize(slogan) for slogan in slogan_lines]
+#init_word_tokenized_slogans = [[WhitespaceTokenizer().tokenize(sent) for sent in slogan] for slogan in sent_tokenized_slogans]
+
+#word_tokenized_slogans = []
+
+#for slogan in init_word_tokenized_slogans:
+#	flattened_slogan = [word for sent in slogan for word in sent]
+#	new_slogan = []
+#	for w in flattened_slogan:
+#		if '.' in w or '?' in w or '!' in w or ',' in w:
+#			new_slogan += word_tokenize(w)
+#		else:
+#			new_slogan += [w]
+#	word_tokenized_slogans += [new_slogan] 
+#	
+#lowered_slogans = [[word.lower() for word in slogan] for slogan in word_tokenized_slogans]
+
+#flattened_slogans = [word for sent in lowered_slogans for word in sent]
+
+#unigram_lex_slogan =  NgramModel(1,flattened_slogans, lambda f,b:LidstoneProbDist(f,0.2))
+#bigram_lex_slogan =  NgramModel(2,flattened_slogans, lambda f,b:LidstoneProbDist(f,0.2))
+#trigram_lex_slogan =  NgramModel(3,flattened_slogans, lambda f,b:LidstoneProbDist(f,0.2))
+
+#init_tagged_slogans = pos_tag(flattened_slogans)
+#tagged_slogans = add_sentence_boundary(init_tagged_slogans)
+#slogan_tags = [t for (w,t) in tagged_slogans]
+
+#unigram_syn_slogan =  NgramModel(1,slogan_tags, lambda f,b:LidstoneProbDist(f,0.2))
+#bigram_syn_slogan =  NgramModel(2,slogan_tags, lambda f,b:LidstoneProbDist(f,0.2))
+#trigram_syn_slogan =  NgramModel(3,slogan_tags, lambda f,b:LidstoneProbDist(f,0.2))
+
+#slogan_1_gram_lex_probs = [(calc_prob_lex(q, unigram_lex_slogan), calc_prob_lex(aq,unigram_lex_slogan)) for (q,aq) in q_aq]
+#slogan_1_gram_lex_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in slogan_1_gram_lex_probs]
+
+#slogan_2_gram_lex_probs = [(calc_prob_lex(q, bigram_lex_slogan), calc_prob_lex(aq,bigram_lex_slogan)) for (q,aq) in q_aq]
+#slogan_2_gram_lex_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in slogan_2_gram_lex_probs]
+
+#slogan_3_gram_lex_probs = [(calc_prob_lex(q, trigram_lex_slogan), calc_prob_lex(aq,trigram_lex_slogan)) for (q,aq) in q_aq]
+#slogan_3_gram_lex_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in slogan_3_gram_lex_probs]
+
+#slogan_1_gram_syn_probs = [(calc_prob_syn(q, unigram_syn_slogan), calc_prob_syn(aq,unigram_syn_slogan)) for (q,aq) in q_aq_tags]
+#slogan_1_gram_syn_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in slogan_1_gram_syn_probs]
+
+#slogan_2_gram_syn_probs = [(calc_prob_syn(q, bigram_syn_slogan), calc_prob_syn(aq,bigram_syn_slogan)) for (q,aq) in q_aq_tags]
+#slogan_2_gram_syn_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in slogan_2_gram_syn_probs]
+
+#slogan_3_gram_syn_probs = [(calc_prob_syn(q, trigram_syn_slogan), calc_prob_syn(aq,trigram_syn_slogan)) for (q,aq) in q_aq_tags]
+#slogan_3_gram_syn_features = [[q_prob, aq_prob, q_prob-aq_prob, int(q_prob > aq_prob)] for (q_prob,aq_prob) in slogan_3_gram_syn_probs]
+
+#slogan_feature_vecs = zip(slogan_1_gram_lex_features, slogan_2_gram_lex_features, slogan_3_gram_lex_features,slogan_1_gram_syn_features, slogan_2_gram_syn_features, slogan_3_gram_syn_features)
+
+#slogan_feature_vecs = [[feat for l in vec for feat in l] for vec in slogan_feature_vecs]
+
+#arff.dump('slogans.arff', slogan_feature_vecs, relation='quotepairs', names = ['unigram_lex_quote_prob', 'unigram_lex_antiquote_prob', 'unigram_lex_diff', 'unigram_lex_quote1_more_likely', 'bigram_lex_quote_prob', 'bigram_lex_antiquote_prob', 'bigram_lex_diff', 'bigram_lex_quote1_more_likely', 'trigram_lex_quote_prob', 'trigram_lex_antiquote_prob', 'trigram_lex_diff', 'trigram_lex_quote1_more_likely', 'unigram_syn_quote_prob', 'unigram_syn_antiquote_prob', 'unigram_syn_diff', 'unigram_syn_quote1_more_likely', 'bigram_syn_quote_prob', 'bigram_syn_antiquote_prob', 'bigram_syn_diff', 'bigram_syn_quote1_more_likely', 'trigram_syn_quote_prob', 'trigram_syn_antiquote_prob', 'trigram_syn_diff', 'trigram_syn_quote1_more_likely'])

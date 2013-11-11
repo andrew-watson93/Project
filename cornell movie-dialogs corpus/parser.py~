@@ -1,0 +1,76 @@
+import re
+
+def extract_info(fname):
+	
+	if fname == 'movie_conversations.txt':
+		i = 0
+	else:
+		i = 1
+	
+	lines = list(line.strip()[i:] for line in open(fname))
+	split_lines = list(line.split('+++$+++') for line in lines)
+	trimmed_lines = list(list(word.strip() for word in line) for line in split_lines)
+	return trimmed_lines
+
+def group_by_movie_id(x_by_movie_list):
+
+	grouped_dict = {}
+	for(m_id, rest) in x_by_movie_list:
+		grouped_dict.setdefault(m_id, []).append(rest)
+	return grouped_dict
+
+
+def make_movie_dict():
+	
+	trimmed_movies = extract_info('movie_lines.txt')
+
+	lines_by_movie_list = list((movie_id, [int(line_id), char_id, char_name, line_text]) for [line_id, char_id,movie_id, char_name, line_text] in trimmed_movies)
+	
+	movie_dict = group_by_movie_id(lines_by_movie_list)
+	movie_dict2 = {}
+	for m_id, info in movie_dict.iteritems():
+		sub_dict = {}
+		for i in info:
+			sub_dict[i[0]] = i[1:]
+		movie_dict2[m_id] = sub_dict
+	return movie_dict2
+	
+def cast_line_lists_as_int(conv_dict):
+	match = r"[0-9]+"
+	for m_id,conv_list in conv_dict.iteritems():
+		for conv_inst in conv_list:
+			rel_line_str = conv_inst[2]
+			rel_line_int_list = [int(x) for x in re.findall(match, rel_line_str)]
+			conv_inst[2] = rel_line_int_list
+	return conv_dict
+
+	
+def make_conv_dict():
+	
+	trimmed_conv = extract_info('movie_conversations.txt')
+	conv_by_movie_list = list((m_id, [speaker_id1, speaker_id2, rel_lines]) for [speaker_id1, speaker_id2, m_id, rel_lines] in trimmed_conv)
+	conv_dict = group_by_movie_id(conv_by_movie_list)
+	conv_dict = cast_line_lists_as_int(conv_dict)
+	
+	conv_dict2 = {}
+	for m_id, info in conv_dict.iteritems():
+		sub_dict = {}
+		for i in info:
+			sub_dict[tuple(i[2])] = i[:2]
+		conv_dict2[m_id] = sub_dict
+	
+	
+	return conv_dict2
+	
+def split_movie_by_conv(movie,convs):
+	by_scene = dict((lines, dict((line,rest) for line, rest in movie.iteritems() if line in lines)) for lines,speakers in convs.iteritems())
+	return by_scene
+	
+def make_movie_conv_dict(movie_dict, conv_dict):
+	movie_conv_dict = dict((m_id, split_movie_by_conv(lines, conv_dict[m_id])) for m_id, lines in movie_dict.iteritems())
+#	for m_id, lines in movie_dict.iteritems():
+#		movie_conv_dict[m_id] = split_movie_by_conv(lines,conv_dict[m_id])
+	return movie_conv_dict
+
+movie_dict = make_movie_dict()
+conv_dict = make_conv_dict()	
